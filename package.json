@@ -1,0 +1,16 @@
+{
+  "name": "loto-facil-system",
+  "version": "1.0.0",
+  "description": "Sistema de análise e geração de apostas da Lotofácil baseado em padrões estatísticos históricos.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0",
+    "xlsx": "^0.18.5"
+  },
+  "keywords": ["lotofacil", "lottery", "statistics"],
+  "license": "MIT"
+}
