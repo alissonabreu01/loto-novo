@@ -10,6 +10,7 @@ import pytest
 
 from caixa_api import CaixaAPIClient, CaixaAPIError
 from database import Database
+from download_historico import baixar_concursos
 
 # Payload real da API da Caixa (concurso 1)
 PAYLOAD_CONCURSO_1 = {
@@ -145,6 +146,126 @@ class TestDatabaseCRUD:
             original = json.loads(row["json_original"])
             assert original["localSorteio"] == "Caminhão da Sorte"
             assert original["numero"] == 1
+
+
+class TestBaixarConcursos:
+    """Testes da função baixar_concursos (com mocks)."""
+
+    def _make_client(self, ultimo_numero: int = 10):
+        """Cria um cliente mock que retorna payloads para qualquer concurso."""
+        from unittest.mock import Mock
+
+        client = Mock()
+        client.get_ultimo_numero.return_value = ultimo_numero
+
+        def fake_get_concurso(numero: int) -> dict:
+            payload = dict(PAYLOAD_CONCURSO_1)
+            payload["numero"] = numero
+            return payload
+
+        client.get_concurso.side_effect = fake_get_concurso
+        return client
+
+    def test_baixar_concursos_do_zero(self, tmp_path, monkeypatch):
+        """Baixa todos os concursos quando o banco está vazio."""
+        db_path = str(tmp_path / "test.db")
+        client = self._make_client(ultimo_numero=3)
+
+        monkeypatch.setattr(
+            "download_historico.CaixaAPIClient", lambda **kw: client
+        )
+
+        resultado = baixar_concursos(db_path=db_path, delay=0)
+
+        assert resultado.baixados == 3
+        assert resultado.erros == 0
+        assert resultado.total_banco == 3
+        assert resultado.inicio == 1
+        assert resultado.ultimo == 3
+
+    def test_baixar_concursos_continua_do_ultimo(self, tmp_path, monkeypatch):
+        """Continua do próximo concurso após o último salvo."""
+        db_path = str(tmp_path / "test.db")
+        client = self._make_client(ultimo_numero=5)
+
+        monkeypatch.setattr(
+            "download_historico.CaixaAPIClient", lambda **kw: client
+        )
+
+        # Salva concursos 1 e 2 antes
+        with Database(db_path) as db:
+            for n in [1, 2]:
+                payload = dict(PAYLOAD_CONCURSO_1)
+                payload["numero"] = n
+                db.upsert_concurso(payload)
+
+        resultado = baixar_concursos(db_path=db_path, delay=0)
+
+        assert resultado.baixados == 3  # baixou 3, 4, 5
+        assert resultado.total_banco == 5
+        assert resultado.inicio == 3
+
+    def test_baixar_concursos_banco_atualizado(self, tmp_path, monkeypatch):
+        """Não faz nada quando o banco já está atualizado."""
+        db_path = str(tmp_path / "test.db")
+        client = self._make_client(ultimo_numero=3)
+
+        monkeypatch.setattr(
+            "download_historico.CaixaAPIClient", lambda **kw: client
+        )
+
+        # Salva todos os concursos até o último
+        with Database(db_path) as db:
+            for n in [1, 2, 3]:
+                payload = dict(PAYLOAD_CONCURSO_1)
+                payload["numero"] = n
+                db.upsert_concurso(payload)
+
+        resultado = baixar_concursos(db_path=db_path, delay=0)
+
+        assert resultado.baixados == 0
+        assert resultado.total_banco == 3
+        assert resultado.tempo_total == 0.0
+
+    def test_progress_callback_chamado(self, tmp_path, monkeypatch):
+        """O progress_callback é chamado para cada concurso."""
+        db_path = str(tmp_path / "test.db")
+        client = self._make_client(ultimo_numero=3)
+
+        monkeypatch.setattr(
+            "download_historico.CaixaAPIClient", lambda **kw: client
+        )
+
+        chamadas = []
+        baixar_concursos(
+            db_path=db_path,
+            delay=0,
+            progress_callback=lambda atual, ultimo, baixados, erros:
+                chamadas.append((atual, ultimo, baixados, erros)),
+        )
+
+        assert len(chamadas) == 3
+        assert chamadas[0] == (1, 3, 1, 0)
+        assert chamadas[-1] == (3, 3, 3, 0)
+
+    def test_log_callback_recebe_mensagens(self, tmp_path, monkeypatch):
+        """O log_callback recebe mensagens do processo."""
+        db_path = str(tmp_path / "test.db")
+        client = self._make_client(ultimo_numero=2)
+
+        monkeypatch.setattr(
+            "download_historico.CaixaAPIClient", lambda **kw: client
+        )
+
+        logs = []
+        baixar_concursos(
+            db_path=db_path,
+            delay=0,
+            log_callback=logs.append,
+        )
+
+        assert any("Download concluído" in msg for msg in logs)
+        assert any("Concurso 2" in msg for msg in logs)
 
 
 class TestCaixaAPIClient:
