@@ -1,1 +1,27 @@
-Nothing should be ignored in this case, as the changes only include source code files (.py) without any build artifacts, dependencies, or temporary files.
+# Banco de dados SQLite
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Ambiente virtual
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Sistema
+.DS_Store
+Thumbs.db
